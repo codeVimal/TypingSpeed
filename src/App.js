@@ -1,119 +1,152 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 
+const wordList = [
+  "cat", "dog", "sun", "ball", "book", "pen", "red", "blue", "run", "jump",
+  "man", "woman", "boy", "girl", "car", "bus", "tree", "bird", "fish", "milk",
+  "cup", "hat", "toy", "star", "is", "water", "fire", "day", "night", "food",
+  "hand", "eye", "ear", "nose", "leg", "foot", "bed", "box", "home", "farm",
+  "rice", "road", "cow", "goat", "frog", "leaf", "rain", "wind", "snow", "rock"
+];
+
+const generateWords = (count) => {
+  return Array.from({ length: count }, () => wordList[Math.floor(Math.random() * wordList.length)]);
+};
+
 const TypingTest = () => {
-  const [text, setText] = useState(''); // Text to type
-  const [inputValue, setInputValue] = useState(''); // User input
-  const [startTime, setStartTime] = useState(null); // Start time
-  const [endTime, setEndTime] = useState(null); // End time
-  const [wpm, setWpm] = useState(0); // Words per minute
-  const [isTestStarted, setIsTestStarted] = useState(false); // If test is started
-  const [loading, setLoading] = useState(true); // Loading state for API call
-  const [error, setError] = useState(null); // Error state for API call
-  const [isDarkMode, setIsDarkMode] = useState(false); // Dark mode state
-
-  // Fetch random text when the component mounts or on restart
-  useEffect(() => {
-    fetchRandomText();
-  }, []);
-
-  const fetchRandomText = async () => {
-    setLoading(true); // Set loading state to true before fetching
-    setError(null); // Clear any previous error
-    try {
-      const response = await fetch('https://quotes-api-self.vercel.app/quote'); // Fetch from quotes API
-      if (!response.ok) {
-        throw new Error('Failed to fetch the text');
-      }
-      const data = await response.json();
-      if (data && data.quote) {
-        setText(data.quote); // Extract the quote
-      } else {
-        throw new Error('Invalid data format from API');
-      }
-    } catch (error) {
-      console.error("Error fetching text:", error.message);
-      setError("Could not fetch text. Please try again.");
-    } finally {
-      setLoading(false); // Set loading state to false after fetch
-    }
-  };
+  const [testDuration, setTestDuration] = useState(60);
+  const [words, setWords] = useState([]);
+  const [inputValue, setInputValue] = useState('');
+  const [timeLeft, setTimeLeft] = useState(60);
+  const [isRunning, setIsRunning] = useState(false);
+  const [wpm, setWpm] = useState(null);
+  const [accuracy, setAccuracy] = useState(null);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const inputRef = useRef(null);
+  const wordBoxRef = useRef(null);
 
   useEffect(() => {
-    if (inputValue === text) {
-      const timeTaken = (endTime - startTime) / 1000; // Time in seconds
-      const wordsTyped = text.split(" ").length;
-      setWpm(Math.round((wordsTyped / timeTaken) * 60)); // Words per minute
-    }
-  }, [endTime, inputValue, text, startTime]);
+    document.body.className = isDarkMode ? 'dark' : '';
+  }, [isDarkMode]);
 
-  const handleInputChange = (e) => {
-    const value = e.target.value;
-
-    if (!isTestStarted) {
-      setStartTime(new Date());
-      setIsTestStarted(true);
-    }
-
-    setInputValue(value);
-
-    if (value === text) {
-      setEndTime(new Date());
-    }
-  };
-
-  const handleRestart = () => {
+  useEffect(() => {
+    const count = testDuration === 30 ? 100 : 200;
+    setWords(generateWords(count));
     setInputValue('');
-    setStartTime(null);
-    setEndTime(null);
-    setWpm(0);
-    setIsTestStarted(false);
-    fetchRandomText(); // Fetch a new random text on restart
+    setTimeLeft(testDuration);
+    setWpm(null);
+    setAccuracy(null);
+    setIsRunning(false);
+  }, [testDuration]);
+
+  useEffect(() => {
+    if (isRunning && timeLeft > 0) {
+      const timer = setTimeout(() => setTimeLeft((prev) => prev - 1), 1000);
+      return () => clearTimeout(timer);
+    } else if (timeLeft === 0) {
+      finishTest();
+    }
+  }, [timeLeft, isRunning]);
+
+  useEffect(() => {
+    if (isRunning && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isRunning]);
+
+  // Scroll every 24 words
+  useEffect(() => {
+    const wordsTyped = inputValue.trim().split(/\s+/).length;
+    if (wordsTyped % 30 === 0 && wordsTyped !== 0) {
+      const line = Math.floor(wordsTyped / 30);
+      const scrollAmount = line * 48;
+      wordBoxRef.current.scrollTo({ top: scrollAmount, behavior: 'smooth' });
+    }
+  }, [inputValue]);
+
+  // Start timer on first keypress
+  useEffect(() => {
+    if (!isRunning && inputValue.trim().length > 0) {
+      setIsRunning(true);
+    }
+  }, [inputValue, isRunning]);
+
+  const startTest = () => {
+    const count = testDuration === 30 ? 100 : 200;
+    setWords(generateWords(count));
+    setInputValue('');
+    setTimeLeft(testDuration);
+    setWpm(null);
+    setAccuracy(null);
+    setIsRunning(false);
+    setTimeout(() => inputRef.current?.focus(), 0);
   };
 
-  const toggleDarkMode = () => {
-    setIsDarkMode(prev => !prev);
+  const finishTest = () => {
+    setIsRunning(false);
+    const inputWords = inputValue.trim().split(/\s+/);
+    const correctWords = inputWords.filter((word, idx) => word === words[idx]);
+    const minutes = testDuration / 60;
+    const typedWordCount = inputWords.filter(word => word !== '').length;
+    setWpm(Math.round(typedWordCount / minutes));
+    const acc = typedWordCount > 0 ? (correctWords.length / typedWordCount) * 100 : 0;
+    setAccuracy(Math.round(acc));
+  };
+
+  const renderWords = () => {
+    const inputChars = inputValue.split('');
+    const fullText = words.join(' ');
+    return fullText.split('').map((char, i) => {
+      let color = '';
+      if (i < inputChars.length) {
+        color = inputChars[i] === char ? 'green' : 'red';
+      }
+      return <span key={i} style={{ color }}>{char}</span>;
+    });
   };
 
   return (
-    <div className={`typing-test ${isDarkMode ? 'dark' : ''}`}>
-      <button className="toggle-button" onClick={toggleDarkMode}>
-        <img src={isDarkMode ? "https://i.postimg.cc/K8qrGfYk/dark-mode.png" : "https://i.postimg.cc/kXyvZq3y/light-mode.png"} alt="Toggle Dark Mode" />
-      </button>
-      <h1>Typing Speed Test</h1>
-      {loading ? (
-        <p>Loading text...</p> // Display loading message while fetching
-      ) : error ? (
-        <p>{error}</p> // Display error message if fetch fails
-      ) : (
-        <div style={{ width: '100%' }}>
-          <p>{text}</p> {/* Display the quote */}
-          <textarea
-            value={inputValue}
-            onChange={handleInputChange}
-            placeholder="Start typing the above text..."
-            disabled={endTime !== null}
-            className={isDarkMode ? 'dark' : ''}
+    <div className="App">
+      <div className="typing-test-container">
+        <h1 id='toptext'>TYPING TEST</h1>
+        <button className="toggle-button" onClick={() => setIsDarkMode((prev) => !prev)}>
+          <img
+            src={isDarkMode
+              ? "https://i.postimg.cc/K8qrGfYk/dark-mode.png"
+              : "https://i.postimg.cc/kXyvZq3y/light-mode.png"}
+            alt="Toggle Mode"
           />
+        </button>
+
+        <div className="test-selector">
+          <button className={testDuration === 60 ? 'active' : ''} onClick={() => setTestDuration(60)}>60s</button>
+          <button className={testDuration === 30 ? 'active' : ''} onClick={() => setTestDuration(30)}>30s</button>
         </div>
-      )}
-      {endTime && (
-        <div>
-          <h2>Results</h2>
-          <p>Words per minute (WPM): {wpm}</p>
-          <button onClick={handleRestart}>Restart Test</button>
+
+        <div className="typing-area" ref={wordBoxRef}>
+          <div className="words-display">{renderWords()}</div>
         </div>
-      )}
+
+        <div className="input-container">
+          <textarea
+            ref={inputRef}
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            disabled={timeLeft === 0}
+            placeholder="Start typing here..."
+          />
+          <button className="restart-btn-inline" onClick={startTest}>Restart</button>
+        </div>
+
+        <div className="bottom-bar">
+          <p>Time Left: {timeLeft}s</p>
+          {wpm !== null && (
+            <p>WPM: {wpm} | Accuracy: {accuracy}%</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
 
-function App() {
-  return (
-    <div className="App">
-      <TypingTest />
-    </div>
-  );
-}
-
-export default App;
+export default TypingTest;
